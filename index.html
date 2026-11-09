@@ -3,12 +3,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
   >
-
   <title>Work Orders</title>
 
   <style>
@@ -35,7 +33,6 @@
 </head>
 
 <body>
-
   <iframe
     id="appFrame"
     title="Work Orders"
@@ -45,6 +42,9 @@
   <script>
     const APPS_SCRIPT_URL =
       'https://script.google.com/macros/s/AKfycbyOf3y0SYvG7xkW3qCf1ogJGr_p7JBw-cB0UIoYiLT9kyMIqiHQHWuJnvmIhXEt_LfHnQ/exec';
+
+    const GITHUB_SHELL_CHANNEL =
+      'KENSDOWNER_JOBS_V1';
 
     function buildAppsScriptUrl() {
       const outerUrl =
@@ -58,10 +58,7 @@
         );
 
       outerUrl.searchParams.forEach(
-        function(
-          value,
-          key
-        ) {
+        function(value, key) {
           innerUrl.searchParams.set(
             key,
             value
@@ -112,34 +109,44 @@
     }
 
     function loadWorkOrdersApp() {
-      const frame =
-        document.getElementById(
+      document
+        .getElementById(
           'appFrame'
-        );
-
-      frame.src =
-        buildAppsScriptUrl();
+        )
+        .src =
+          buildAppsScriptUrl();
     }
 
     window.addEventListener(
       'message',
       function(event) {
-        const frame =
-          document.getElementById(
-            'appFrame'
-          );
+        const message =
+          event.data;
 
         if (
-          !frame ||
-          event.source !== frame.contentWindow
+          !message ||
+          message.channel !==
+            GITHUB_SHELL_CHANNEL
         ) {
           return;
         }
 
-        const message =
-          event.data;
+        if (
+          message.type ===
+            'WORK_ORDERS_SHELL_HELLO'
+        ) {
+          if (event.source) {
+            event.source.postMessage(
+              {
+                channel:
+                  GITHUB_SHELL_CHANNEL,
 
-        if (!message) {
+                type:
+                  'WORK_ORDERS_SHELL_ACK'
+              },
+              '*'
+            );
+          }
           return;
         }
 
@@ -149,7 +156,6 @@
         ) {
           window.location.href =
             buildGitHubUrl({});
-
           return;
         }
 
@@ -169,14 +175,11 @@
           return;
         }
 
-        const detailUrl =
+        window.open(
           buildGitHubUrl({
             job:
               workOrderNumber
-          });
-
-        window.open(
-          detailUrl,
+          }),
           '_blank',
           'noopener'
         );
@@ -188,6 +191,5 @@
       loadWorkOrdersApp
     );
   </script>
-
 </body>
 </html>
