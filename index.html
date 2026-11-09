@@ -26,9 +26,9 @@
       display: block;
       width: 100%;
       height: 100%;
-      border: 0;
       margin: 0;
       padding: 0;
+      border: 0;
       background: #ffffff;
     }
   </style>
@@ -47,14 +47,44 @@
       'https://script.google.com/macros/s/AKfycbyOf3y0SYvG7xkW3qCf1ogJGr_p7JBw-cB0UIoYiLT9kyMIqiHQHWuJnvmIhXEt_LfHnQ/exec';
 
 
+    function buildAppsScriptUrl() {
+      const outerUrl =
+        new URL(
+          window.location.href
+        );
+
+      const innerUrl =
+        new URL(
+          APPS_SCRIPT_URL
+        );
+
+
+      outerUrl.searchParams.forEach(
+        function(
+          value,
+          key
+        ) {
+          innerUrl.searchParams.set(
+            key,
+            value
+          );
+        }
+      );
+
+
+      return innerUrl.toString();
+    }
+
+
     function loadWorkOrdersApp() {
       const frame =
         document.getElementById(
           'appFrame'
         );
 
+
       frame.src =
-        APPS_SCRIPT_URL;
+        buildAppsScriptUrl();
     }
 
 
