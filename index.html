@@ -1,60 +1,68 @@
-<!DOCTYPE html>
+<!doctype html>
+
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Web App</title>
-    <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            /* Allow the main page to scroll naturally */
-            height: auto; 
-            overflow: auto;
-        }
-        iframe {
-            border: none;
-            width: 100%;
-            /* Start with a default height while loading */
-            height: 500px; 
-            /* Disable internal scrolling so it behaves like native page text */
-            overflow: hidden; 
-            display: block;
-        }
-    </style>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <title>Work Orders</title>
+
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    #appFrame {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+  </style>
 </head>
+
 <body>
 
-    <iframe id="thisThing" src="https://script.google.com/macros/s/AKfycbxsJIvdquGtHROIXePUcZRLE7hMHL7tNBFLf-KNL5RrWAyhib-x4Rwy3R1bip9fH2673A/exec?page=supervisor" scrolling="no"></iframe>
+  <iframe
+    id="appFrame"
+    title="Work Orders"
+    allow="geolocation"
+  ></iframe>
 
-    <script>
-        // Listen for messages from the iframe
-        window.addEventListener('message', function(event) {
-            // Check if the message contains our specific height key
-            if (event.data && event.data.gasHeight) {
-                var iframe = document.getElementById('my-gas-app');
-                if (iframe) {
-                    // Update the iframe height dynamically
-                    iframe.style.height = event.data.gasHeight + 'px';
-                }
-            }
-        }, false);
-    </script>
+  <script>
+    const APPS_SCRIPT_URL =
+      'https://script.google.com/macros/s/AKfycbyOf3y0SYvG7xkW3qCf1ogJGr_p7JBw-cB0UIoYiLT9kyMIqiHQHWuJnvmIhXEt_LfHnQ/exec';
+
+
+    function loadWorkOrdersApp() {
+      const frame =
+        document.getElementById(
+          'appFrame'
+        );
+
+      frame.src =
+        APPS_SCRIPT_URL;
+    }
+
+
+    document.addEventListener(
+      'DOMContentLoaded',
+      loadWorkOrdersApp
+    );
+  </script>
 
 </body>
-
-<script>
-  function sendHeight() {
-    // Calculate the total height of the content
-    var height = document.documentElement.scrollHeight || document.body.scrollHeight;
-    // Send the height to the parent window hosting the iframe
-    window.parent.postMessage({ 'gasHeight': height }, '*');
-  }
-
-  // Send height when the page finishes loading
-  window.addEventListener('load', sendHeight);
-  
-  // Optional: Send height again if the window resizes or content changes
-  window.addEventListener('resize', sendHeight);
-</script>
 </html>
