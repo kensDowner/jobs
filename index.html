@@ -46,7 +46,6 @@
     const APPS_SCRIPT_URL =
       'https://script.google.com/macros/s/AKfycbyOf3y0SYvG7xkW3qCf1ogJGr_p7JBw-cB0UIoYiLT9kyMIqiHQHWuJnvmIhXEt_LfHnQ/exec';
 
-
     function buildAppsScriptUrl() {
       const outerUrl =
         new URL(
@@ -57,7 +56,6 @@
         new URL(
           APPS_SCRIPT_URL
         );
-
 
       outerUrl.searchParams.forEach(
         function(
@@ -71,10 +69,47 @@
         }
       );
 
-
       return innerUrl.toString();
     }
 
+    function buildGitHubUrl(
+      parameters
+    ) {
+      const url =
+        new URL(
+          window.location.href
+        );
+
+      url.search =
+        '';
+
+      url.hash =
+        '';
+
+      Object.keys(
+        parameters || {}
+      ).forEach(
+        function(key) {
+          const value =
+            parameters[key];
+
+          if (
+            value !== null &&
+            value !== undefined &&
+            value !== ''
+          ) {
+            url.searchParams.set(
+              key,
+              String(
+                value
+              )
+            );
+          }
+        }
+      );
+
+      return url.toString();
+    }
 
     function loadWorkOrdersApp() {
       const frame =
@@ -82,11 +117,71 @@
           'appFrame'
         );
 
-
       frame.src =
         buildAppsScriptUrl();
     }
 
+    window.addEventListener(
+      'message',
+      function(event) {
+        const frame =
+          document.getElementById(
+            'appFrame'
+          );
+
+        if (
+          !frame ||
+          event.source !== frame.contentWindow
+        ) {
+          return;
+        }
+
+        const message =
+          event.data;
+
+        if (!message) {
+          return;
+        }
+
+        if (
+          message.type ===
+            'WORK_ORDERS_OPEN_HOME'
+        ) {
+          window.location.href =
+            buildGitHubUrl({});
+
+          return;
+        }
+
+        if (
+          message.type !==
+            'WORK_ORDERS_OPEN_JOB'
+        ) {
+          return;
+        }
+
+        const workOrderNumber =
+          String(
+            message.workOrderNumber || ''
+          ).trim();
+
+        if (!workOrderNumber) {
+          return;
+        }
+
+        const detailUrl =
+          buildGitHubUrl({
+            job:
+              workOrderNumber
+          });
+
+        window.open(
+          detailUrl,
+          '_blank',
+          'noopener'
+        );
+      }
+    );
 
     document.addEventListener(
       'DOMContentLoaded',
