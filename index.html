@@ -41,10 +41,7 @@
 
   <script>
     const APPS_SCRIPT_URL =
-      'https://script.google.com/macros/s/AKfycbyOf3y0SYvG7xkW3qCf1ogJGr_p7JBw-cB0UIoYiLT9kyMIqiHQHWuJnvmIhXEt_LfHnQ/exec';
-
-    const GITHUB_SHELL_CHANNEL =
-      'KENSDOWNER_JOBS_V1';
+      'https://script.google.com/macros/s/AKfycbzMzdMhAa7d1Da5A6BF7EFmqCXPC75SBQO1tDg9OUjivDwTDF050wwP4qP6hhHU53ivTw/exec';
 
     function buildAppsScriptUrl() {
       const outerUrl =
@@ -66,46 +63,13 @@
         }
       );
 
-      return innerUrl.toString();
-    }
-
-    function buildGitHubUrl(
-      parameters
-    ) {
-      const url =
-        new URL(
-          window.location.href
-        );
-
-      url.search =
-        '';
-
-      url.hash =
-        '';
-
-      Object.keys(
-        parameters || {}
-      ).forEach(
-        function(key) {
-          const value =
-            parameters[key];
-
-          if (
-            value !== null &&
-            value !== undefined &&
-            value !== ''
-          ) {
-            url.searchParams.set(
-              key,
-              String(
-                value
-              )
-            );
-          }
-        }
+      innerUrl.searchParams.set(
+        'shell',
+        outerUrl.origin +
+        outerUrl.pathname
       );
 
-      return url.toString();
+      return innerUrl.toString();
     }
 
     function loadWorkOrdersApp() {
@@ -116,75 +80,6 @@
         .src =
           buildAppsScriptUrl();
     }
-
-    window.addEventListener(
-      'message',
-      function(event) {
-        const message =
-          event.data;
-
-        if (
-          !message ||
-          message.channel !==
-            GITHUB_SHELL_CHANNEL
-        ) {
-          return;
-        }
-
-        if (
-          message.type ===
-            'WORK_ORDERS_SHELL_HELLO'
-        ) {
-          if (event.source) {
-            event.source.postMessage(
-              {
-                channel:
-                  GITHUB_SHELL_CHANNEL,
-
-                type:
-                  'WORK_ORDERS_SHELL_ACK'
-              },
-              '*'
-            );
-          }
-          return;
-        }
-
-        if (
-          message.type ===
-            'WORK_ORDERS_OPEN_HOME'
-        ) {
-          window.location.href =
-            buildGitHubUrl({});
-          return;
-        }
-
-        if (
-          message.type !==
-            'WORK_ORDERS_OPEN_JOB'
-        ) {
-          return;
-        }
-
-        const workOrderNumber =
-          String(
-            message.workOrderNumber || ''
-          ).trim();
-
-        if (!workOrderNumber) {
-          return;
-        }
-
-        window.open(
-          buildGitHubUrl({
-            job:
-              workOrderNumber
-          }),
-          '_blank',
-          'noopener'
-        );
-      }
-    );
 
     document.addEventListener(
       'DOMContentLoaded',
