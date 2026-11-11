@@ -1,1 +1,12 @@
-
+{
+  "name": "Kensington Work Orders",
+  "short_name": "Work Orders",
+  "description": "Kensington field work order application",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1565c0",
+  "orientation": "any",
+  "icons": []
+}
