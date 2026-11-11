@@ -9,13 +9,9 @@
   >
 
   <meta name="robots" content="noindex, nofollow">
-
   <meta name="theme-color" content="#1565c0">
 
-  <link
-    rel="manifest"
-    href="./manifest.webmanifest"
-  >
+  <link rel="manifest" href="./manifest.webmanifest">
 
   <title>Work Orders</title>
 
@@ -39,6 +35,50 @@
       border: 0;
       background: #ffffff;
     }
+
+    #notificationSetup {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 9999;
+
+      display: none;
+
+      padding: 12px;
+      border-radius: 10px;
+
+      background: #ffffff;
+      color: #222222;
+
+      box-shadow:
+        0 2px 12px rgba(0, 0, 0, 0.28);
+
+      font-family:
+        Arial,
+        sans-serif;
+    }
+
+    #notificationSetup button {
+      width: 100%;
+      padding: 12px;
+
+      border: 0;
+      border-radius: 8px;
+
+      background: #1565c0;
+      color: #ffffff;
+
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    #notificationStatus {
+      margin-top: 8px;
+      font-size: 13px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
   </style>
 </head>
 
@@ -50,9 +90,54 @@
     allow="geolocation"
   ></iframe>
 
+  <div id="notificationSetup">
+    <button
+      id="enableNotificationsButton"
+      type="button"
+    >
+      Enable Notifications
+    </button>
+
+    <div id="notificationStatus"></div>
+  </div>
+
+  <script
+    src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"
+  ></script>
+
+  <script
+    src="https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js"
+  ></script>
+
   <script>
     const APPS_SCRIPT_URL =
       'https://script.google.com/macros/s/AKfycbzMzdMhAa7d1Da5A6BF7EFmqCXPC75SBQO1tDg9OUjivDwTDF050wwP4qP6hhHU53ivTw/exec';
+
+    const FIREBASE_CONFIG = {
+      apiKey:
+        "AIzaSyBK8rLm-6L3a1PycWKS4S6jeoNLV282SJg",
+
+      authDomain:
+        "kensington-work-orders.firebaseapp.com",
+
+      projectId:
+        "kensington-work-orders",
+
+      storageBucket:
+        "kensington-work-orders.firebasestorage.app",
+
+      messagingSenderId:
+        "707805815423",
+
+      appId:
+        "1:707805815423:web:59a8744b54ea34e5aa554a"
+    };
+
+    const VAPID_KEY =
+      "BDOFltKg2yHiYh5nhbysr2gwTgEzg69GcK5mtVtwFxq4BiltbykBAN9WwFk05f10cIduLAYE7VvEG--Zh1lluE4";
+
+    let firebaseMessaging = null;
+    let serviceWorkerRegistration = null;
 
     function buildAppsScriptUrl() {
       const outerUrl =
@@ -92,37 +177,247 @@
           buildAppsScriptUrl();
     }
 
-    function registerServiceWorker() {
-      if (!('serviceWorker' in navigator)) {
+    function setNotificationStatus(message) {
+      document
+        .getElementById(
+          'notificationStatus'
+        )
+        .textContent =
+          message || '';
+    }
+
+    function showNotificationSetup() {
+      document
+        .getElementById(
+          'notificationSetup'
+        )
+        .style.display =
+          'block';
+    }
+
+    function hideNotificationSetup() {
+      document
+        .getElementById(
+          'notificationSetup'
+        )
+        .style.display =
+          'none';
+    }
+
+    async function registerServiceWorker() {
+      if (
+        !('serviceWorker' in navigator)
+      ) {
         console.log(
-          '[PWA] Service workers are not supported by this browser.'
+          '[PWA] Service workers are not supported.'
         );
+
+        return null;
+      }
+
+      try {
+        const registration =
+          await navigator.serviceWorker.register(
+            './service-worker.js'
+          );
+
+        console.log(
+          '[PWA] Service worker registered:',
+          registration.scope
+        );
+
+        serviceWorkerRegistration =
+          registration;
+
+        return registration;
+      } catch (error) {
+        console.error(
+          '[PWA] Service worker registration failed:',
+          error
+        );
+
+        return null;
+      }
+    }
+
+    function initialiseFirebase() {
+      if (
+        !firebase.apps.length
+      ) {
+        firebase.initializeApp(
+          FIREBASE_CONFIG
+        );
+      }
+
+      firebaseMessaging =
+        firebase.messaging();
+    }
+
+    async function enableNotifications() {
+      const button =
+        document.getElementById(
+          'enableNotificationsButton'
+        );
+
+      button.disabled = true;
+
+      setNotificationStatus(
+        'Requesting notification permission...'
+      );
+
+      try {
+        const permission =
+          await Notification.requestPermission();
+
+        if (
+          permission !== 'granted'
+        ) {
+          setNotificationStatus(
+            'Notifications were not enabled. Browser permission: ' +
+            permission
+          );
+
+          button.disabled = false;
+          return;
+        }
+
+        if (
+          !serviceWorkerRegistration
+        ) {
+          serviceWorkerRegistration =
+            await registerServiceWorker();
+        }
+
+        if (
+          !serviceWorkerRegistration
+        ) {
+          throw new Error(
+            'Service worker registration is unavailable.'
+          );
+        }
+
+        initialiseFirebase();
+
+        setNotificationStatus(
+          'Notification permission granted. Registering this device...'
+        );
+
+        const token =
+          await firebaseMessaging.getToken({
+            vapidKey:
+              VAPID_KEY,
+
+            serviceWorkerRegistration:
+              serviceWorkerRegistration
+          });
+
+        if (
+          !token
+        ) {
+          throw new Error(
+            'Firebase did not return a registration token.'
+          );
+        }
+
+        console.log(
+          '[FCM] Registration token:',
+          token
+        );
+
+        setNotificationStatus(
+          'SUCCESS - device registered for notifications.\n\nFCM token:\n' +
+          token
+        );
+
+        button.style.display =
+          'none';
+
+      } catch (error) {
+        console.error(
+          '[FCM] Notification setup failed:',
+          error
+        );
+
+        setNotificationStatus(
+          'Notification setup failed: ' +
+          (
+            error &&
+            error.message
+              ? error.message
+              : String(error)
+          )
+        );
+
+        button.disabled =
+          false;
+      }
+    }
+
+    async function prepareNotifications() {
+      if (
+        !('Notification' in window)
+      ) {
         return;
       }
 
-      navigator.serviceWorker
-        .register(
-          './service-worker.js'
-        )
-        .then(function(registration) {
-          console.log(
-            '[PWA] Service worker registered:',
-            registration.scope
-          );
-        })
-        .catch(function(error) {
-          console.error(
-            '[PWA] Service worker registration failed:',
-            error
-          );
-        });
+      if (
+        !('serviceWorker' in navigator)
+      ) {
+        return;
+      }
+
+      await registerServiceWorker();
+
+      if (
+        Notification.permission ===
+        'granted'
+      ) {
+        showNotificationSetup();
+
+        setNotificationStatus(
+          'Notification permission already granted. Press Enable Notifications to register this device.'
+        );
+
+        return;
+      }
+
+      if (
+        Notification.permission ===
+        'denied'
+      ) {
+        showNotificationSetup();
+
+        setNotificationStatus(
+          'Notifications are blocked for this site in the browser settings.'
+        );
+
+        document
+          .getElementById(
+            'enableNotificationsButton'
+          )
+          .style.display =
+            'none';
+
+        return;
+      }
+
+      showNotificationSetup();
     }
+
+    document
+      .getElementById(
+        'enableNotificationsButton'
+      )
+      .addEventListener(
+        'click',
+        enableNotifications
+      );
 
     document.addEventListener(
       'DOMContentLoaded',
       function() {
         loadWorkOrdersApp();
-        registerServiceWorker();
+        prepareNotifications();
       }
     );
   </script>
