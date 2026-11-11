@@ -1,58 +1,146 @@
-const SW_VERSION = "kens-jobs-v1";
+const SW_VERSION = "kens-jobs-fcm-v1";
 
-self.addEventListener("install", (event) => {
-  console.log("[Service Worker] Installing:", SW_VERSION);
-  self.skipWaiting();
-});
+importScripts(
+  "https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"
+);
 
-self.addEventListener("activate", (event) => {
-  console.log("[Service Worker] Activated:", SW_VERSION);
+importScripts(
+  "https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js"
+);
 
-  event.waitUntil(
-    self.clients.claim()
-  );
-});
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBK8rLm-6L3a1PycWKS4S6jeoNLV282SJg",
+  authDomain: "kensington-work-orders.firebaseapp.com",
+  projectId: "kensington-work-orders",
+  storageBucket: "kensington-work-orders.firebasestorage.app",
+  messagingSenderId: "707805815423",
+  appId: "1:707805815423:web:59a8744b54ea34e5aa554a"
+};
 
-self.addEventListener("push", (event) => {
-  console.log("[Service Worker] Push received");
+firebase.initializeApp(
+  FIREBASE_CONFIG
+);
 
-  let data = {};
+const messaging =
+  firebase.messaging();
 
-  if (event.data) {
-    try {
-      data = event.data.json();
-    } catch (error) {
-      data = {
-        body: event.data.text()
-      };
-    }
+self.addEventListener(
+  "install",
+  function(event) {
+    console.log(
+      "[Service Worker] Installing:",
+      SW_VERSION
+    );
+
+    self.skipWaiting();
   }
+);
 
-  const title = data.title || "Kensington Work Orders";
-  const options = {
-    body: data.body || "You have a new Work Order.",
-    data: {
-      url: data.url || "./"
-    },
-    tag: data.tag || "kens-work-order",
-    renotify: true
-  };
+self.addEventListener(
+  "activate",
+  function(event) {
+    console.log(
+      "[Service Worker] Activated:",
+      SW_VERSION
+    );
 
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
-});
+    event.waitUntil(
+      self.clients.claim()
+    );
+  }
+);
 
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
+messaging.onBackgroundMessage(
+  function(payload) {
+    console.log(
+      "[Service Worker] Firebase background message:",
+      payload
+    );
 
-  const targetUrl =
-    event.notification.data &&
-    event.notification.data.url
-      ? event.notification.data.url
-      : "./";
+    const notification =
+      payload.notification || {};
 
-  event.waitUntil(
-    clients.openWindow(targetUrl)
-  );
-});
+    const data =
+      payload.data || {};
+
+    const title =
+      notification.title ||
+      data.title ||
+      "Kensington Work Orders";
+
+    const options = {
+      body:
+        notification.body ||
+        data.body ||
+        "You have a new Work Order.",
+
+      data: {
+        url:
+          data.url ||
+          "./"
+      },
+
+      tag:
+        data.tag ||
+        "kens-work-order",
+
+      renotify: true
+    };
+
+    return self.registration.showNotification(
+      title,
+      options
+    );
+  }
+);
+
+self.addEventListener(
+  "notificationclick",
+  function(event) {
+    event.notification.close();
+
+    const notificationData =
+      event.notification.data || {};
+
+    const targetUrl =
+      new URL(
+        notificationData.url || "./",
+        self.registration.scope
+      ).href;
+
+    event.waitUntil(
+      self.clients
+        .matchAll({
+          type: "window",
+          includeUncontrolled: true
+        })
+        .then(function(windowClients) {
+          for (
+            let index = 0;
+            index < windowClients.length;
+            index += 1
+          ) {
+            const client =
+              windowClients[index];
+
+            if (
+              client.url === targetUrl &&
+              "focus" in client
+            ) {
+              return client.focus();
+            }
+          }
+
+          if (
+            self.clients.openWindow
+          ) {
+            return self.clients.openWindow(
+              targetUrl
+            );
+          }
+
+          return null;
+        })
+    );
+  }
+);
