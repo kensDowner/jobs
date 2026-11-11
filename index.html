@@ -1,12 +1,22 @@
 <!doctype html>
-
 <html lang="en">
 <head>
   <meta charset="utf-8">
+
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover"
   >
+
+  <meta name="robots" content="noindex, nofollow">
+
+  <meta name="theme-color" content="#1565c0">
+
+  <link
+    rel="manifest"
+    href="./manifest.webmanifest"
+  >
+
   <title>Work Orders</title>
 
   <style>
@@ -33,6 +43,7 @@
 </head>
 
 <body>
+
   <iframe
     id="appFrame"
     title="Work Orders"
@@ -81,10 +92,40 @@
           buildAppsScriptUrl();
     }
 
+    function registerServiceWorker() {
+      if (!('serviceWorker' in navigator)) {
+        console.log(
+          '[PWA] Service workers are not supported by this browser.'
+        );
+        return;
+      }
+
+      navigator.serviceWorker
+        .register(
+          './service-worker.js'
+        )
+        .then(function(registration) {
+          console.log(
+            '[PWA] Service worker registered:',
+            registration.scope
+          );
+        })
+        .catch(function(error) {
+          console.error(
+            '[PWA] Service worker registration failed:',
+            error
+          );
+        });
+    }
+
     document.addEventListener(
       'DOMContentLoaded',
-      loadWorkOrdersApp
+      function() {
+        loadWorkOrdersApp();
+        registerServiceWorker();
+      }
     );
   </script>
+
 </body>
 </html>
