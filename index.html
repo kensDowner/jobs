@@ -354,53 +354,70 @@
     }
 
     async function prepareNotifications() {
+      const outerUrl =
+        new URL(
+          window.location.href
+        );
+    
+      const notificationTestMode =
+        outerUrl.searchParams.get(
+          'notifications'
+        ) === 'test';
+    
+      if (
+        !notificationTestMode
+      ) {
+        hideNotificationSetup();
+        return;
+      }
+    
       if (
         !('Notification' in window)
       ) {
         return;
       }
-
+    
       if (
         !('serviceWorker' in navigator)
       ) {
         return;
       }
-
+    
       await registerServiceWorker();
-
+    
       if (
         Notification.permission ===
         'granted'
       ) {
         showNotificationSetup();
-
+    
         setNotificationStatus(
           'Notification permission already granted. Press Enable Notifications to register this device.'
         );
-
+    
         return;
       }
-
+    
       if (
         Notification.permission ===
         'denied'
       ) {
         showNotificationSetup();
-
+    
         setNotificationStatus(
           'Notifications are blocked for this site in the browser settings.'
         );
-
+    
         document
           .getElementById(
             'enableNotificationsButton'
           )
           .style.display =
             'none';
-
+    
         return;
       }
-
+    
       showNotificationSetup();
     }
 
