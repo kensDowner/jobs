@@ -9,7 +9,7 @@ importScripts(
 );
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBK8rLm-6L3a1PycWKS4S6jeoNLV282SJg",
+  apiKey: "AIzaSyBK8rLM-6L3a1PycWKS4S6jeoNlV282SJg",
   authDomain: "kensington-work-orders.firebaseapp.com",
   projectId: "kensington-work-orders",
   storageBucket: "kensington-work-orders.firebasestorage.app",
