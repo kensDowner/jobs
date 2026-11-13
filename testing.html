@@ -227,7 +227,23 @@
     
     let pushRegistrationOptions =
       null;
+
+    let pushBridgeWindow =
+      null;
     
+    let pushBridgeReady =
+      false;
+    
+    let resolvePushBridgeReady =
+      null;
+    
+    const pushBridgeReadyPromise =
+      new Promise(
+        function(resolve) {
+          resolvePushBridgeReady =
+            resolve;
+        }
+      );
     
     // ------------------------------------------------------------
     // CREATE OR REUSE A PERSISTENT DEVICE ID
@@ -296,10 +312,37 @@
     // ------------------------------------------------------------
     // SEND REQUEST TO APPS SCRIPT IFRAME
     // ------------------------------------------------------------
-    function sendPushBridgeRequest(
+    async function sendPushBridgeRequest(
       type,
       payload
     ) {
+      if (!pushBridgeReady) {
+        await Promise.race([
+          pushBridgeReadyPromise,
+    
+          new Promise(
+            function(resolve, reject) {
+              window.setTimeout(
+                function() {
+                  reject(
+                    new Error(
+                      'The Apps Script registration bridge did not become ready.'
+                    )
+                  );
+                },
+                15000
+              );
+            }
+          )
+        ]);
+      }
+    
+      if (!pushBridgeWindow) {
+        throw new Error(
+          'The Apps Script registration bridge is unavailable.'
+        );
+      }
+    
       return new Promise(
         function(resolve, reject) {
           const requestId =
@@ -326,51 +369,28 @@
             {
               resolve:
                 resolve,
+    
               reject:
                 reject,
+    
               timeoutId:
                 timeoutId
             }
           );
     
-          const appFrame =
-            document.getElementById(
-              'appFrame'
-            );
-    
-          if (
-            !appFrame ||
-            !appFrame.contentWindow
-          ) {
-            window.clearTimeout(
-              timeoutId
-            );
-    
-            pushBridgeRequests.delete(
-              requestId
-            );
-    
-            reject(
-              new Error(
-                'The Work Orders app frame is unavailable.'
-              )
-            );
-    
-            return;
-          }
-    
-          appFrame.contentWindow.postMessage(
+          pushBridgeWindow.postMessage(
             Object.assign(
               {
                 type:
                   type,
+    
                 requestId:
                   requestId
               },
               payload ||
               {}
             ),
-            'https://script.google.com'
+            '*'
           );
         }
       );
@@ -378,18 +398,11 @@
     
     
     // ------------------------------------------------------------
-    // RECEIVE RESPONSE FROM APPS SCRIPT IFRAME
+    // RECEIVE BRIDGE READY AND RESPONSE MESSAGES
     // ------------------------------------------------------------
     window.addEventListener(
       'message',
       function(event) {
-        if (
-          event.origin !==
-          'https://script.google.com'
-        ) {
-          return;
-        }
-    
         const message =
           event.data &&
           typeof event.data ===
@@ -402,6 +415,45 @@
             message.type ||
             ''
           ).trim();
+    
+    
+        // --------------------------------------------------------
+        // SAVE THE EXACT INNER APPS SCRIPT WINDOW
+        // --------------------------------------------------------
+        if (
+          messageType ===
+          'PUSH_REGISTRATION_BRIDGE_READY'
+        ) {
+          pushBridgeWindow =
+            event.source;
+    
+          pushBridgeReady =
+            true;
+    
+          if (
+            resolvePushBridgeReady
+          ) {
+            resolvePushBridgeReady();
+            resolvePushBridgeReady =
+              null;
+          }
+    
+          console.log(
+            '[Push Bridge] Apps Script registration bridge is ready.'
+          );
+    
+          return;
+        }
+    
+    
+        // Only accept responses from the window that announced itself.
+        if (
+          !pushBridgeWindow ||
+          event.source !==
+            pushBridgeWindow
+        ) {
+          return;
+        }
     
         if (
           messageType !==
