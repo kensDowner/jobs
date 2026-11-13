@@ -59,6 +59,35 @@
         sans-serif;
     }
 
+    .notificationSetupTitle {
+      margin-bottom: 10px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    
+    .notificationSetupLabel {
+      display: block;
+      margin-top: 10px;
+      margin-bottom: 4px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    
+    #notificationSetup select {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #b8b8b8;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #222222;
+      font-size: 16px;
+    }
+    
+    #enableNotificationsButton {
+      margin-top: 12px;
+    }    
+
     #notificationSetup button {
       width: 100%;
       padding: 12px;
@@ -91,13 +120,67 @@
   ></iframe>
 
   <div id="notificationSetup">
+    <div class="notificationSetupTitle">
+      Register this device
+    </div>
+  
+    <label
+      class="notificationSetupLabel"
+      for="pushDeviceType"
+    >
+      Device type
+    </label>
+  
+    <select id="pushDeviceType">
+      <option value="PERSONAL">
+        Personal device
+      </option>
+  
+      <option value="VEHICLE">
+        Vehicle device
+      </option>
+    </select>
+  
+    <div id="pushEmployeeField">
+      <label
+        class="notificationSetupLabel"
+        for="pushEmployeeName"
+      >
+        Employee
+      </label>
+  
+      <select id="pushEmployeeName">
+        <option value="">
+          Loading employees...
+        </option>
+      </select>
+    </div>
+  
+    <div
+      id="pushVehicleField"
+      style="display: none;"
+    >
+      <label
+        class="notificationSetupLabel"
+        for="pushVehicleRegistration"
+      >
+        Vehicle
+      </label>
+  
+      <select id="pushVehicleRegistration">
+        <option value="">
+          Loading vehicles...
+        </option>
+      </select>
+    </div>
+  
     <button
       id="enableNotificationsButton"
       type="button"
     >
-      Enable Notifications
+      Enable Notifications & Register Device
     </button>
-
+  
     <div id="notificationStatus"></div>
   </div>
 
@@ -138,6 +221,469 @@
 
     let firebaseMessaging = null;
     let serviceWorkerRegistration = null;
+
+    const pushBridgeRequests =
+      new Map();
+    
+    let pushRegistrationOptions =
+      null;
+    
+    
+    // ------------------------------------------------------------
+    // CREATE OR REUSE A PERSISTENT DEVICE ID
+    //
+    // This identifies the browser installation independently from
+    // the Firebase token, which Firebase may rotate later.
+    // ------------------------------------------------------------
+    function getPushDeviceId() {
+      const storageKey =
+        'kensingtonPushDeviceId';
+    
+      let deviceId =
+        String(
+          window.localStorage.getItem(
+            storageKey
+          ) ||
+          ''
+        ).trim();
+    
+      if (deviceId) {
+        return deviceId;
+      }
+    
+      if (
+        window.crypto &&
+        typeof window.crypto.randomUUID ===
+          'function'
+      ) {
+        deviceId =
+          window.crypto.randomUUID();
+    
+      } else {
+        deviceId =
+          'device-' +
+          Date.now() +
+          '-' +
+          Math.random()
+            .toString(36)
+            .slice(2);
+      }
+    
+      window.localStorage.setItem(
+        storageKey,
+        deviceId
+      );
+    
+      return deviceId;
+    }
+    
+    
+    // ------------------------------------------------------------
+    // CREATE A UNIQUE BRIDGE REQUEST ID
+    // ------------------------------------------------------------
+    function createPushBridgeRequestId() {
+      return (
+        'push-' +
+        Date.now() +
+        '-' +
+        Math.random()
+          .toString(36)
+          .slice(2)
+      );
+    }
+    
+    
+    // ------------------------------------------------------------
+    // SEND REQUEST TO APPS SCRIPT IFRAME
+    // ------------------------------------------------------------
+    function sendPushBridgeRequest(
+      type,
+      payload
+    ) {
+      return new Promise(
+        function(resolve, reject) {
+          const requestId =
+            createPushBridgeRequestId();
+    
+          const timeoutId =
+            window.setTimeout(
+              function() {
+                pushBridgeRequests.delete(
+                  requestId
+                );
+    
+                reject(
+                  new Error(
+                    'Apps Script did not respond to the registration request.'
+                  )
+                );
+              },
+              20000
+            );
+    
+          pushBridgeRequests.set(
+            requestId,
+            {
+              resolve:
+                resolve,
+              reject:
+                reject,
+              timeoutId:
+                timeoutId
+            }
+          );
+    
+          const appFrame =
+            document.getElementById(
+              'appFrame'
+            );
+    
+          if (
+            !appFrame ||
+            !appFrame.contentWindow
+          ) {
+            window.clearTimeout(
+              timeoutId
+            );
+    
+            pushBridgeRequests.delete(
+              requestId
+            );
+    
+            reject(
+              new Error(
+                'The Work Orders app frame is unavailable.'
+              )
+            );
+    
+            return;
+          }
+    
+          appFrame.contentWindow.postMessage(
+            Object.assign(
+              {
+                type:
+                  type,
+                requestId:
+                  requestId
+              },
+              payload ||
+              {}
+            ),
+            'https://script.google.com'
+          );
+        }
+      );
+    }
+    
+    
+    // ------------------------------------------------------------
+    // RECEIVE RESPONSE FROM APPS SCRIPT IFRAME
+    // ------------------------------------------------------------
+    window.addEventListener(
+      'message',
+      function(event) {
+        if (
+          event.origin !==
+          'https://script.google.com'
+        ) {
+          return;
+        }
+    
+        const message =
+          event.data &&
+          typeof event.data ===
+            'object'
+            ? event.data
+            : {};
+    
+        const messageType =
+          String(
+            message.type ||
+            ''
+          ).trim();
+    
+        if (
+          messageType !==
+            'PUSH_REGISTRATION_OPTIONS_RESPONSE' &&
+          messageType !==
+            'PUSH_DEVICE_REGISTRATION_RESPONSE'
+        ) {
+          return;
+        }
+    
+        const requestId =
+          String(
+            message.requestId ||
+            ''
+          ).trim();
+    
+        const pendingRequest =
+          pushBridgeRequests.get(
+            requestId
+          );
+    
+        if (!pendingRequest) {
+          return;
+        }
+    
+        window.clearTimeout(
+          pendingRequest.timeoutId
+        );
+    
+        pushBridgeRequests.delete(
+          requestId
+        );
+    
+        if (message.error) {
+          pendingRequest.reject(
+            new Error(
+              String(
+                message.error
+              )
+            )
+          );
+    
+          return;
+        }
+    
+        pendingRequest.resolve(
+          message.result
+        );
+      }
+    );
+    
+    
+    // ------------------------------------------------------------
+    // DEVICE TYPE UI
+    // ------------------------------------------------------------
+    function updatePushRegistrationFields() {
+      const deviceType =
+        document
+          .getElementById(
+            'pushDeviceType'
+          )
+          .value;
+    
+      document
+        .getElementById(
+          'pushEmployeeField'
+        )
+        .style.display =
+          deviceType ===
+          'PERSONAL'
+            ? 'block'
+            : 'none';
+    
+      document
+        .getElementById(
+          'pushVehicleField'
+        )
+        .style.display =
+          deviceType ===
+          'VEHICLE'
+            ? 'block'
+            : 'none';
+    }
+    
+    
+    // ------------------------------------------------------------
+    // POPULATE REGISTRATION OPTIONS
+    // ------------------------------------------------------------
+    function populatePushRegistrationOptions(
+      result
+    ) {
+      const employees =
+        result &&
+        Array.isArray(
+          result.employees
+        )
+          ? result.employees
+          : [];
+    
+      const vehicles =
+        result &&
+        Array.isArray(
+          result.vehicles
+        )
+          ? result.vehicles
+          : [];
+    
+      const employeeSelect =
+        document.getElementById(
+          'pushEmployeeName'
+        );
+    
+      const vehicleSelect =
+        document.getElementById(
+          'pushVehicleRegistration'
+        );
+    
+      employeeSelect.innerHTML =
+        '';
+    
+      vehicleSelect.innerHTML =
+        '';
+    
+      const employeePlaceholder =
+        document.createElement(
+          'option'
+        );
+    
+      employeePlaceholder.value =
+        '';
+    
+      employeePlaceholder.textContent =
+        'Select employee';
+    
+      employeeSelect.appendChild(
+        employeePlaceholder
+      );
+    
+      employees.forEach(
+        function(employee) {
+          const employeeName =
+            String(
+              employee.employeeName ||
+              ''
+            ).trim();
+    
+          if (!employeeName) {
+            return;
+          }
+    
+          const useName =
+            String(
+              employee.useName ||
+              ''
+            ).trim();
+    
+          const option =
+            document.createElement(
+              'option'
+            );
+    
+          option.value =
+            employeeName;
+    
+          option.textContent =
+            useName &&
+            useName !== employeeName
+              ? useName +
+                ' - ' +
+                employeeName
+              : employeeName;
+    
+          employeeSelect.appendChild(
+            option
+          );
+        }
+      );
+    
+      const vehiclePlaceholder =
+        document.createElement(
+          'option'
+        );
+    
+      vehiclePlaceholder.value =
+        '';
+    
+      vehiclePlaceholder.textContent =
+        'Select vehicle';
+    
+      vehicleSelect.appendChild(
+        vehiclePlaceholder
+      );
+    
+      vehicles.forEach(
+        function(vehicle) {
+          const registration =
+            String(
+              vehicle.registration ||
+              ''
+            ).trim();
+    
+          if (!registration) {
+            return;
+          }
+    
+          const description =
+            String(
+              vehicle.description ||
+              ''
+            ).trim();
+    
+          const crew =
+            String(
+              vehicle.crew ||
+              ''
+            ).trim();
+    
+          const extraDetails =
+            [
+              description,
+              crew
+            ]
+              .filter(Boolean)
+              .join(' - ');
+    
+          const option =
+            document.createElement(
+              'option'
+            );
+    
+          option.value =
+            registration;
+    
+          option.textContent =
+            extraDetails
+              ? registration +
+                ' - ' +
+                extraDetails
+              : registration;
+    
+          vehicleSelect.appendChild(
+            option
+          );
+        }
+      );
+    }
+    
+    
+    // ------------------------------------------------------------
+    // LOAD EMPLOYEE AND VEHICLE OPTIONS
+    // ------------------------------------------------------------
+    async function loadPushRegistrationOptions() {
+      setNotificationStatus(
+        'Loading employees and vehicles...'
+      );
+    
+      const result =
+        await sendPushBridgeRequest(
+          'PUSH_REGISTRATION_OPTIONS_REQUEST'
+        );
+    
+      if (
+        !result ||
+        result.success !==
+          true
+      ) {
+        throw new Error(
+          'Registration options could not be loaded.'
+        );
+      }
+    
+      pushRegistrationOptions =
+        result;
+    
+      populatePushRegistrationOptions(
+        result
+      );
+    
+      setNotificationStatus(
+        'Select the person or vehicle for this device.'
+      );
+    }    
 
     function buildAppsScriptUrl() {
       const outerUrl =
@@ -258,36 +804,85 @@
         document.getElementById(
           'enableNotificationsButton'
         );
-
-      button.disabled = true;
-
+    
+      const deviceType =
+        document
+          .getElementById(
+            'pushDeviceType'
+          )
+          .value;
+    
+      const employeeName =
+        document
+          .getElementById(
+            'pushEmployeeName'
+          )
+          .value;
+    
+      const vehicleRegistration =
+        document
+          .getElementById(
+            'pushVehicleRegistration'
+          )
+          .value;
+    
+      if (
+        deviceType ===
+          'PERSONAL' &&
+        !employeeName
+      ) {
+        setNotificationStatus(
+          'Select an employee before registering this device.'
+        );
+    
+        return;
+      }
+    
+      if (
+        deviceType ===
+          'VEHICLE' &&
+        !vehicleRegistration
+      ) {
+        setNotificationStatus(
+          'Select a vehicle before registering this device.'
+        );
+    
+        return;
+      }
+    
+      button.disabled =
+        true;
+    
       setNotificationStatus(
         'Requesting notification permission...'
       );
-
+    
       try {
         const permission =
           await Notification.requestPermission();
-
+    
         if (
-          permission !== 'granted'
+          permission !==
+          'granted'
         ) {
           setNotificationStatus(
             'Notifications were not enabled. Browser permission: ' +
             permission
           );
-
-          button.disabled = false;
+    
+          button.disabled =
+            false;
+    
           return;
         }
-
+    
         if (
           !serviceWorkerRegistration
         ) {
           serviceWorkerRegistration =
             await registerServiceWorker();
         }
-
+    
         if (
           !serviceWorkerRegistration
         ) {
@@ -295,51 +890,115 @@
             'Service worker registration is unavailable.'
           );
         }
-
+    
         initialiseFirebase();
-
+    
         setNotificationStatus(
-          'Notification permission granted. Registering this device...'
+          'Creating the Firebase registration token...'
         );
-
+    
         const token =
           await firebaseMessaging.getToken({
             vapidKey:
               VAPID_KEY,
-
             serviceWorkerRegistration:
               serviceWorkerRegistration
           });
-
-        if (
-          !token
-        ) {
+    
+        if (!token) {
           throw new Error(
             'Firebase did not return a registration token.'
           );
         }
-
-        console.log(
-          '[FCM] Registration token:',
-          token
-        );
-
+    
         setNotificationStatus(
-          'SUCCESS - device registered for notifications.\n\nFCM token:\n' +
-          token
+          'Saving this device registration...'
         );
-
-        button.style.display =
-          'none';
-
+    
+        const result =
+          await sendPushBridgeRequest(
+            'PUSH_DEVICE_REGISTRATION_REQUEST',
+            {
+              registration: {
+                deviceId:
+                  getPushDeviceId(),
+    
+                pushToken:
+                  token,
+    
+                deviceType:
+                  deviceType,
+    
+                employeeName:
+                  deviceType ===
+                  'PERSONAL'
+                    ? employeeName
+                    : '',
+    
+                vehicleRegistration:
+                  deviceType ===
+                  'VEHICLE'
+                    ? vehicleRegistration
+                    : '',
+    
+                userAgent:
+                  navigator.userAgent ||
+                  '',
+    
+                platform:
+                  navigator.userAgentData &&
+                  navigator.userAgentData.platform
+                    ? navigator.userAgentData.platform
+                    : (
+                        navigator.platform ||
+                        ''
+                      ),
+    
+                notificationPermission:
+                  Notification.permission
+              }
+            }
+          );
+    
+        if (
+          !result ||
+          result.success !==
+            true
+        ) {
+          throw new Error(
+            'Apps Script did not confirm the registration.'
+          );
+        }
+    
+        const registeredIdentity =
+          result.deviceType ===
+          'PERSONAL'
+            ? result.employeeName
+            : result.vehicleRegistration;
+    
+        setNotificationStatus(
+          'SUCCESS - this device is registered as ' +
+          result.deviceType +
+          ': ' +
+          registeredIdentity +
+          '.\n\npushDevices row: ' +
+          result.rowNumber
+        );
+    
+        button.textContent =
+          'Update Device Registration';
+    
+        button.disabled =
+          false;
+    
       } catch (error) {
         console.error(
-          '[FCM] Notification setup failed:',
+          '[FCM] Device registration failed:',
           error
         );
-
+    
         setNotificationStatus(
-          'Notification setup failed: ' +
+          'Device registration failed: ' +
           (
             error &&
             error.message
@@ -347,7 +1006,7 @@
               : String(error)
           )
         );
-
+    
         button.disabled =
           false;
       }
@@ -362,37 +1021,63 @@
       const notificationTestMode =
         outerUrl.searchParams.get(
           'notifications'
-        ) === 'test';
+        ) ===
+        'test';
     
-      if (
-        !notificationTestMode
-      ) {
+      if (!notificationTestMode) {
         hideNotificationSetup();
         return;
       }
     
+      showNotificationSetup();
+    
       if (
         !('Notification' in window)
       ) {
+        setNotificationStatus(
+          'This browser does not support notifications.'
+        );
+    
+        document
+          .getElementById(
+            'enableNotificationsButton'
+          )
+          .disabled =
+            true;
+    
         return;
       }
     
       if (
         !('serviceWorker' in navigator)
       ) {
+        setNotificationStatus(
+          'This browser does not support service workers.'
+        );
+    
+        document
+          .getElementById(
+            'enableNotificationsButton'
+          )
+          .disabled =
+            true;
+    
         return;
       }
     
       await registerServiceWorker();
     
-      if (
-        Notification.permission ===
-        'granted'
-      ) {
-        showNotificationSetup();
-    
+      try {
+        await loadPushRegistrationOptions();
+      } catch (error) {
         setNotificationStatus(
-          'Notification permission already granted. Press Enable Notifications to register this device.'
+          'Registration options failed to load: ' +
+          (
+            error &&
+            error.message
+              ? error.message
+              : String(error)
+          )
         );
     
         return;
@@ -402,8 +1087,6 @@
         Notification.permission ===
         'denied'
       ) {
-        showNotificationSetup();
-    
         setNotificationStatus(
           'Notifications are blocked for this site in the browser settings.'
         );
@@ -418,9 +1101,27 @@
         return;
       }
     
-      showNotificationSetup();
+      if (
+        Notification.permission ===
+        'granted'
+      ) {
+        setNotificationStatus(
+          'Notification permission is already granted. Select the person or vehicle, then register this device.'
+        );
+      }
     }
 
+    document
+      .getElementById(
+        'pushDeviceType'
+      )
+      .addEventListener(
+        'change',
+        updatePushRegistrationFields
+      );
+    
+    updatePushRegistrationFields();
+    
     document
       .getElementById(
         'enableNotificationsButton'
