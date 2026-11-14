@@ -687,81 +687,136 @@
     }
 
     async function enableNotifications() {
-      const button = document.getElementById('enableNotificationsButton');
-      const deviceType = document.getElementById('pushDeviceType').value;
-      const employeeName = document.getElementById('pushEmployeeName').value;
-      const vehicleRegistration =
-        document.getElementById('pushVehicleRegistration').value;
+      const button =
+        document.getElementById(
+          'enableNotificationsButton'
+        );
 
-      if (deviceType === 'PERSONAL' && !employeeName) {
-        setNotificationStatus('Select an employee before registering this device.');
+      const deviceType =
+        document.getElementById(
+          'pushDeviceType'
+        ).value;
+
+      const employeeName =
+        document.getElementById(
+          'pushEmployeeName'
+        ).value;
+
+      const vehicleRegistration =
+        document.getElementById(
+          'pushVehicleRegistration'
+        ).value;
+
+      if (
+        deviceType === 'PERSONAL' &&
+        !employeeName
+      ) {
+        setNotificationStatus(
+          'Select an employee before registering this device.'
+        );
         return;
       }
 
-      if (deviceType === 'VEHICLE' && !vehicleRegistration) {
-        setNotificationStatus('Select a vehicle before registering this device.');
+      if (
+        deviceType === 'VEHICLE' &&
+        !vehicleRegistration
+      ) {
+        setNotificationStatus(
+          'Select a vehicle before registering this device.'
+        );
         return;
       }
 
       button.disabled = true;
-      setNotificationStatus('Requesting notification permission...');
+
+      setNotificationStatus(
+        'Requesting notification permission...'
+      );
 
       try {
-        const permission = await Notification.requestPermission();
+        const permission =
+          await Notification.requestPermission();
 
         if (permission !== 'granted') {
           setNotificationStatus(
-            'Notifications were not enabled. Browser permission: ' + permission
+            'Notifications were not enabled. Browser permission: ' +
+            permission
           );
+
           button.disabled = false;
-          updateNotificationBell(currentPushRegistrationStatus);
+
+          updateNotificationBell(
+            currentPushRegistrationStatus
+          );
+
           return;
         }
 
         if (!serviceWorkerRegistration) {
-          serviceWorkerRegistration = await registerServiceWorker();
+          serviceWorkerRegistration =
+            await registerServiceWorker();
         }
 
         if (!serviceWorkerRegistration) {
-          throw new Error('Service worker registration is unavailable.');
+          throw new Error(
+            'Service worker registration is unavailable.'
+          );
         }
 
         initialiseFirebase();
-        setNotificationStatus('Creating the Firebase registration token...');
 
-        const token = await firebaseMessaging.getToken({
-          vapidKey: VAPID_KEY,
-          serviceWorkerRegistration: serviceWorkerRegistration
-        });
-
-        if (!token) {
-          throw new Error('Firebase did not return a registration token.');
-        }
-
-        setNotificationStatus('Saving this device registration...');
-
-        const result = await sendPushBridgeRequest(
-          'PUSH_DEVICE_REGISTRATION_REQUEST',
-          {
-            registration: {
-              deviceId: getPushDeviceId(),
-              pushToken: token,
-              deviceType: deviceType,
-              employeeName: deviceType === 'PERSONAL' ? employeeName : '',
-              vehicleRegistration:
-                deviceType === 'VEHICLE' ? vehicleRegistration : '',
-              userAgent: navigator.userAgent || '',
-              platform:
-                navigator.userAgentData && navigator.userAgentData.platform
-                  ? navigator.userAgentData.platform
-                  : navigator.platform || '',
-              notificationPermission: Notification.permission
-            }
-          }
+        setNotificationStatus(
+          'Creating the Firebase registration token...'
         );
 
+        const token =
+          await firebaseMessaging.getToken({
+            vapidKey: VAPID_KEY,
+            serviceWorkerRegistration: serviceWorkerRegistration
+          });
+
+        if (!token) {
+          throw new Error(
+            'Firebase did not return a registration token.'
+          );
+        }
+
+        setNotificationStatus(
+          'Saving this device registration...'
+        );
+
+        const result =
+          await sendPushBridgeRequest(
+            'PUSH_DEVICE_REGISTRATION_REQUEST',
+            {
+              registration: {
+                deviceId: getPushDeviceId(),
+                pushToken: token,
+                deviceType: deviceType,
+                employeeName:
+                  deviceType === 'PERSONAL'
+                    ? employeeName
+                    : '',
+                vehicleRegistration:
+                  deviceType === 'VEHICLE'
+                    ? vehicleRegistration
+                    : '',
+                userAgent: navigator.userAgent || '',
+                platform:
+                  navigator.userAgentData &&
+                  navigator.userAgentData.platform
+                    ? navigator.userAgentData.platform
+                    : navigator.platform || '',
+                notificationPermission:
+                  Notification.permission
+              }
+            }
+          );
+
         if (!result || result.success !== true) {
-          throw new Error('Apps Script did not confirm the registration.');
+          throw new Error(
+            'Apps Script did not confirm the registration.'
+          );
         }
 
         const registeredIdentity =
@@ -769,29 +824,66 @@
             ? result.employeeName
             : result.vehicleRegistration;
 
+        currentPushRegistrationStatus = {
+          success: true,
+          registered: true,
+          enabled: true,
+          deviceType: result.deviceType,
+          employeeName: result.employeeName || '',
+          vehicleRegistration: result.vehicleRegistration || '',
+          registeredIdentity: registeredIdentity,
+          notificationPermission: Notification.permission,
+          rowNumber: result.rowNumber,
+          reason: 'REGISTERED'
+        };
+
+        notificationSetupOpenedManually = false;
+
+        updateNotificationBell(
+          currentPushRegistrationStatus
+        );
+
         setNotificationStatus(
           'SUCCESS - this device is registered as ' +
           result.deviceType +
           ': ' +
           registeredIdentity +
-          '.\n\npushDevices row: ' +
-          result.rowNumber
+          '.'
         );
 
-        button.textContent = 'Update Device Registration';
+        button.textContent =
+          'Update Device Registration';
+
         button.disabled = false;
-        notificationSetupOpenedManually = false;
-        await loadPushRegistrationStatus();
+
+        document
+          .getElementById(
+            'disableNotificationsButton'
+          )
+          .style.display = 'block';
+
+        hideNotificationSetup();
+
       } catch (error) {
-        console.error('[FCM] Device registration failed:', error);
+        console.error(
+          '[FCM] Device registration failed:',
+          error
+        );
 
         setNotificationStatus(
           'Device registration failed: ' +
-          (error && error.message ? error.message : String(error))
+          (
+            error && error.message
+              ? error.message
+              : String(error)
+          )
         );
 
         button.disabled = false;
-        updateNotificationBell(currentPushRegistrationStatus);
+
+        updateNotificationBell(
+          currentPushRegistrationStatus
+        );
       }
     }
 
