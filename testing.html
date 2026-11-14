@@ -29,6 +29,14 @@
       background: #ffffff;
     }
 
+    #notificationBackdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      display: none;
+      background: rgba(14, 78, 108, 0.18);
+    }
+
     #notificationSetup {
       position: fixed;
       left: 12px;
@@ -96,65 +104,6 @@
       margin-top: 8px;
       background: #b3261e !important;
     }
-
-    #closeNotificationSetupButton {
-      margin-top: 8px;
-      background: #5f6368 !important;
-    }
-
-    #notificationBellButton {
-      position: fixed;
-      top: 8px;
-      right: 10px;
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 42px;
-      height: 42px;
-      padding: 0;
-      border: 1px solid rgba(0, 0, 0, 0.16);
-      border-radius: 50%;
-      background: #ffffff;
-      color: #333333;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
-      font-size: 21px;
-      line-height: 1;
-      cursor: pointer;
-    }
-
-    #notificationBellButton.notificationEnabled {
-      background: #e6f4ea;
-      border-color: #188038;
-    }
-
-    #notificationBellButton.notificationAttention {
-      background: #fff4ce;
-      border-color: #b06000;
-    }
-
-    #notificationBellButton.notificationBlocked {
-      background: #fce8e6;
-      border-color: #b3261e;
-    }
-
-    #notificationBellState {
-      position: absolute;
-      right: -2px;
-      bottom: -2px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 16px;
-      height: 16px;
-      padding: 0 2px;
-      border: 2px solid #ffffff;
-      border-radius: 10px;
-      background: #5f6368;
-      color: #ffffff;
-      font-size: 10px;
-      font-weight: 700;
-    }
   </style>
 </head>
 
@@ -164,6 +113,8 @@
     title="Work Orders"
     allow="geolocation"
   ></iframe>
+
+  <div id="notificationBackdrop" aria-hidden="true"></div>
 
   <div id="notificationSetup">
     <div class="notificationSetupTitle">Register this device</div>
@@ -210,21 +161,7 @@
     >
       Disable notifications for this browser
     </button>
-
-    <button id="closeNotificationSetupButton" type="button">
-      Close
-    </button>
   </div>
-
-  <button
-    id="notificationBellButton"
-    type="button"
-    aria-label="Notification settings"
-    title="Notification settings"
-  >
-    <span id="notificationBellIcon" aria-hidden="true">🔔</span>
-    <span id="notificationBellState" aria-hidden="true"></span>
-  </button>
 
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js"></script>
@@ -333,6 +270,15 @@
 
       const messageType = String(message.type || '').trim();
 
+      if (
+        messageType === 'PUSH_NOTIFICATION_SETTINGS_OPEN' &&
+        pushBridgeWindow &&
+        event.source === pushBridgeWindow
+      ) {
+        openNotificationSettings();
+        return;
+      }
+
       if (messageType === 'PUSH_REGISTRATION_BRIDGE_READY') {
         pushBridgeWindow = event.source;
         pushBridgeReady = true;
@@ -343,6 +289,7 @@
         }
 
         console.log('[Push Bridge] Apps Script registration bridge is ready.');
+        updateNotificationBell(currentPushRegistrationStatus);
         return;
       }
 
@@ -470,59 +417,43 @@
     }
 
     function showNotificationSetup() {
+      document.getElementById('notificationBackdrop').style.display = 'block';
       document.getElementById('notificationSetup').style.display = 'block';
     }
 
     function hideNotificationSetup() {
       document.getElementById('notificationSetup').style.display = 'none';
+      document.getElementById('notificationBackdrop').style.display = 'none';
     }
 
     function updateNotificationBell(status) {
-      const button = document.getElementById('notificationBellButton');
-      const icon = document.getElementById('notificationBellIcon');
-      const state = document.getElementById('notificationBellState');
-
-      button.classList.remove(
-        'notificationEnabled',
-        'notificationAttention',
-        'notificationBlocked'
-      );
-
-      if (!('Notification' in window)) {
-        icon.textContent = '🔕';
-        state.textContent = '!';
-        button.classList.add('notificationBlocked');
-        button.title = 'Notifications are not supported by this browser';
+      if (!pushBridgeWindow) {
         return;
       }
 
-      if (Notification.permission === 'denied') {
-        icon.textContent = '🔕';
-        state.textContent = '!';
-        button.classList.add('notificationBlocked');
-        button.title = 'Notifications are blocked in browser settings';
-        return;
-      }
+      let state = 'ATTENTION';
+      let identity = '';
 
-      if (
+      if (!('Notification' in window) || Notification.permission === 'denied') {
+        state = 'BLOCKED';
+      } else if (
         status &&
         status.registered === true &&
         status.enabled === true &&
         Notification.permission === 'granted'
       ) {
-        icon.textContent = '🔔';
-        state.textContent = '✓';
-        button.classList.add('notificationEnabled');
-        button.title =
-          'Notifications enabled for ' +
-          String(status.registeredIdentity || 'this browser');
-        return;
+        state = 'ENABLED';
+        identity = String(status.registeredIdentity || '');
       }
 
-      icon.textContent = '🔔';
-      state.textContent = '!';
-      button.classList.add('notificationAttention');
-      button.title = 'Notification setup required';
+      pushBridgeWindow.postMessage(
+        {
+          type: 'PUSH_NOTIFICATION_STATUS_UPDATE',
+          state: state,
+          identity: identity
+        },
+        '*'
+      );
     }
 
     function displayPushRegistrationStatus(status) {
@@ -613,18 +544,7 @@
 
     function closeNotificationSettings() {
       notificationSetupOpenedManually = false;
-
-      if (
-        currentPushRegistrationStatus &&
-        currentPushRegistrationStatus.registered === true &&
-        currentPushRegistrationStatus.enabled === true &&
-        Notification.permission === 'granted'
-      ) {
-        hideNotificationSetup();
-        return;
-      }
-
-      showNotificationSetup();
+      hideNotificationSetup();
     }
 
     async function disableNotificationsForThisBrowser() {
@@ -635,19 +555,24 @@
       try {
         const result = await sendPushBridgeRequest(
           'PUSH_DEVICE_DISABLE_REQUEST',
-          {
-            deviceId: getPushDeviceId()
-          }
+          { deviceId: getPushDeviceId() }
         );
 
-        if (!result || result.success !== true) {
-          throw new Error(
-            'Apps Script did not confirm that the registration was disabled.'
-          );
+        if (!result || result.success !== true || result.disabled !== true) {
+          throw new Error('Apps Script did not confirm that the registration was disabled.');
         }
 
+        currentPushRegistrationStatus = {
+          success: true,
+          registered: true,
+          enabled: false,
+          reason: 'DISABLED'
+        };
+
         notificationSetupOpenedManually = false;
-        await loadPushRegistrationStatus();
+        updateNotificationBell(currentPushRegistrationStatus);
+        hideNotificationSetup();
+
       } catch (error) {
         setNotificationStatus(
           'Notifications could not be disabled: ' +
@@ -930,15 +855,11 @@
       .addEventListener('click', enableNotifications);
 
     document
-      .getElementById('notificationBellButton')
-      .addEventListener('click', openNotificationSettings);
-
-    document
       .getElementById('disableNotificationsButton')
       .addEventListener('click', disableNotificationsForThisBrowser);
 
     document
-      .getElementById('closeNotificationSetupButton')
+      .getElementById('notificationBackdrop')
       .addEventListener('click', closeNotificationSettings);
 
     document.addEventListener('DOMContentLoaded', function() {
