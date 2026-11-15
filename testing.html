@@ -385,16 +385,71 @@
     }
 
     async function loadPushRegistrationOptions() {
-      setNotificationStatus('Loading employees and vehicles...');
-
-      const result = await sendPushBridgeRequest('PUSH_REGISTRATION_OPTIONS_REQUEST');
-
-      if (!result || result.success !== true) {
-        throw new Error('Registration options could not be loaded.');
+      setNotificationStatus(
+        'Loading employees and vehicles...'
+      );
+    
+      const apiUrl =
+        APPS_SCRIPT_URL +
+        (
+          APPS_SCRIPT_URL.indexOf('?') === -1
+            ? '?'
+            : '&'
+        ) +
+        'api=pushRegistrationOptions';
+    
+      const response =
+        await fetch(
+          apiUrl,
+          {
+            method: 'GET',
+            cache: 'no-store',
+            redirect: 'follow'
+          }
+        );
+    
+      if (!response.ok) {
+        throw new Error(
+          'Registration options request failed: HTTP ' +
+          response.status
+        );
       }
-
-      pushRegistrationOptions = result;
-      populatePushRegistrationOptions(result);
+    
+      const result =
+        await response.json();
+    
+      if (
+        !result ||
+        result.success !== true
+      ) {
+        throw new Error(
+          result &&
+          result.error
+            ? String(result.error)
+            : 'Registration options could not be loaded.'
+        );
+      }
+    
+      pushRegistrationOptions =
+        result;
+    
+      populatePushRegistrationOptions(
+        result
+      );
+    
+      console.log(
+        '[Push Registration] Options loaded directly from Apps Script JSON API:',
+        {
+          employees:
+            Array.isArray(result.employees)
+              ? result.employees.length
+              : 0,
+          vehicles:
+            Array.isArray(result.vehicles)
+              ? result.vehicles.length
+              : 0
+        }
+      );
     }
 
     function buildAppsScriptUrl() {
