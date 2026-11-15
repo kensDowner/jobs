@@ -19,6 +19,10 @@
     #enableNotificationsButton{margin-top:12px}
     #notificationStatus{margin-top:8px;font-size:13px;line-height:1.35;white-space:pre-line;word-break:break-word}
     #disableNotificationsButton{margin-top:8px;background:#b3261e!important}
+    #notificationDiagnostics{margin-top:10px;padding-top:10px;border-top:1px solid #ddd}
+    #notificationDiagnostics summary{cursor:pointer;font-size:13px;font-weight:700;color:#31576b}
+    #notificationDiagnosticsOutput{max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;border-radius:6px;background:#f5f7f8;color:#263238;font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-word}
+    #copyNotificationDiagnosticsButton{margin-top:8px!important;padding:8px!important;background:#546e7a!important;font-size:13px!important}
   </style>
 </head>
 <body>
@@ -42,6 +46,11 @@
     <button id="enableNotificationsButton" type="button">Enable Notifications &amp; Register Device</button>
     <div id="notificationStatus"></div>
     <button id="disableNotificationsButton" type="button" style="display:none">Disable notifications for this browser</button>
+    <details id="notificationDiagnostics">
+      <summary>Show diagnostics</summary>
+      <pre id="notificationDiagnosticsOutput"></pre>
+      <button id="copyNotificationDiagnosticsButton" type="button">Copy diagnostics</button>
+    </details>
   </div>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js"></script>
@@ -53,6 +62,63 @@
     const pushBridgeRequests=new Map();
     const pushBridgeReadyPromise=new Promise(resolve=>{resolvePushBridgeReady=resolve});
 
+    const notificationDiagnosticsLog = [];
+
+    function addNotificationDiagnostic(stage, detail) {
+      const now = new Date();
+      const time = now.toLocaleTimeString('en-AU', { hour12: false }) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+      const text = '[' + time + '] ' + stage + (detail ? ' - ' + detail : '');
+      notificationDiagnosticsLog.push(text);
+      console.log('[Notification diagnostics]', stage, detail || '');
+      renderNotificationDiagnostics();
+    }
+
+    function getNotificationDiagnosticHeader() {
+      const standalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+      const appleStandalone = typeof navigator.standalone !== 'undefined' ? navigator.standalone === true : false;
+      return [
+        'Kensington Notifications TEST',
+        'Time: ' + new Date().toString(),
+        'Page: ' + location.href,
+        'Standalone display-mode: ' + (standalone ? 'yes' : 'no'),
+        'Apple navigator.standalone: ' + (appleStandalone ? 'yes' : 'no'),
+        'Notification API: ' + (('Notification' in window) ? 'yes' : 'no'),
+        'Notification permission: ' + (('Notification' in window) ? Notification.permission : 'unavailable'),
+        'Service Worker API: ' + (('serviceWorker' in navigator) ? 'yes' : 'no'),
+        'User agent: ' + (navigator.userAgent || ''),
+        '',
+        'EVENTS'
+      ].join('\n');
+    }
+
+    function getNotificationDiagnosticsText() {
+      return getNotificationDiagnosticHeader() + '\n' + notificationDiagnosticsLog.join('\n');
+    }
+
+    function renderNotificationDiagnostics() {
+      const output = document.getElementById('notificationDiagnosticsOutput');
+      if (output) {
+        output.textContent = getNotificationDiagnosticsText();
+        output.scrollTop = output.scrollHeight;
+      }
+    }
+
+    async function copyNotificationDiagnostics() {
+      const text = getNotificationDiagnosticsText();
+      try {
+        await navigator.clipboard.writeText(text);
+        addNotificationDiagnostic('DIAGNOSTICS_COPIED', 'Clipboard write succeeded');
+        setNotificationStatus('Diagnostics copied. Paste them into Copilot.');
+      } catch (error) {
+        addNotificationDiagnostic('DIAGNOSTICS_COPY_FAILED', error && error.message ? error.message : String(error));
+        const output = document.getElementById('notificationDiagnosticsOutput');
+        if (output) {
+          output.textContent = text;
+        }
+        setNotificationStatus('Copy was blocked. Open Show diagnostics and manually copy the text.');
+      }
+    }
+
     function getPushDeviceId(){const key='kensingtonPushDeviceId';let id=String(localStorage.getItem(key)||'').trim();if(id)return id;id=window.crypto&&typeof crypto.randomUUID==='function'?crypto.randomUUID():'device-'+Date.now()+'-'+Math.random().toString(36).slice(2);localStorage.setItem(key,id);return id}
     function createPushBridgeRequestId(){return 'push-'+Date.now()+'-'+Math.random().toString(36).slice(2)}
     async function sendPushBridgeRequest(type,payload){if(!pushBridgeReady){await Promise.race([pushBridgeReadyPromise,new Promise((resolve,reject)=>setTimeout(()=>reject(new Error('The Apps Script registration bridge did not become ready.')),15000))])}if(!pushBridgeWindow)throw new Error('The Apps Script registration bridge is unavailable.');return new Promise((resolve,reject)=>{const requestId=createPushBridgeRequestId();const timeoutId=setTimeout(()=>{pushBridgeRequests.delete(requestId);reject(new Error('Apps Script did not respond to the registration request.'))},20000);pushBridgeRequests.set(requestId,{resolve,reject,timeoutId});pushBridgeWindow.postMessage(Object.assign({type,requestId},payload||{}),'*')})}
@@ -63,7 +129,105 @@
     function populatePushRegistrationOptions(result){const employees=result&&Array.isArray(result.employees)?result.employees:[];const vehicles=result&&Array.isArray(result.vehicles)?result.vehicles:[];const es=document.getElementById('pushEmployeeName'),vs=document.getElementById('pushVehicleRegistration');es.innerHTML='<option value="">Select employee</option>';vs.innerHTML='<option value="">Select vehicle</option>';employees.forEach(employee=>{const name=String(employee.employeeName||'').trim();if(!name)return;const use=String(employee.useName||'').trim(),o=document.createElement('option');o.value=name;o.textContent=use&&use!==name?use+' - '+name:name;es.appendChild(o)});vehicles.forEach(vehicle=>{const reg=String(vehicle.registration||'').trim();if(!reg)return;const extra=[String(vehicle.description||'').trim(),String(vehicle.crew||'').trim()].filter(Boolean).join(' - '),o=document.createElement('option');o.value=reg;o.textContent=extra?reg+' - '+extra:reg;vs.appendChild(o)})}
 
     // iPhone-safe read-only option loading through JSONP.
-    async function loadPushRegistrationOptions(){setNotificationStatus('Loading employees and vehicles...');return new Promise((resolve,reject)=>{const callbackName='pushRegistrationOptionsCallback_'+Date.now()+'_'+Math.floor(Math.random()*1000000);const script=document.createElement('script');let timeoutId=null;function cleanup(){if(timeoutId)clearTimeout(timeoutId);try{delete window[callbackName]}catch(error){window[callbackName]=undefined}if(script.parentNode)script.parentNode.removeChild(script)}window[callbackName]=result=>{if(!result||result.success!==true){const message=result&&result.error?String(result.error):'Registration options could not be loaded.';cleanup();reject(new Error(message));return}pushRegistrationOptions=result;populatePushRegistrationOptions(result);cleanup();resolve(result)};script.onerror=()=>{cleanup();reject(new Error('Could not load registration options from Apps Script.'))};timeoutId=setTimeout(()=>{cleanup();reject(new Error('Timed out loading employees and vehicles.'))},15000);script.src=APPS_SCRIPT_URL+'?api=pushRegistrationOptions&callback='+encodeURIComponent(callbackName)+'&_='+Date.now();script.async=true;document.head.appendChild(script)})}
+    async function loadPushRegistrationOptions() {
+      setNotificationStatus('Loading employees and vehicles...');
+      addNotificationDiagnostic('JSONP_REQUEST_STARTED', 'Preparing Apps Script registration-options request');
+
+      return new Promise(function(resolve, reject) {
+        const callbackName =
+          'pushRegistrationOptionsCallback_' +
+          Date.now() +
+          '_' +
+          Math.floor(Math.random() * 1000000);
+
+        const script = document.createElement('script');
+        let timeoutId = null;
+        let callbackReceived = false;
+
+        function cleanup() {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+
+          try {
+            delete window[callbackName];
+          } catch (error) {
+            window[callbackName] = undefined;
+          }
+
+          if (script.parentNode) {
+            script.parentNode.removeChild(script);
+          }
+        }
+
+        window[callbackName] = function(result) {
+          callbackReceived = true;
+          addNotificationDiagnostic('JSONP_CALLBACK_RECEIVED', 'Apps Script called ' + callbackName);
+
+          if (!result || result.success !== true) {
+            const message =
+              result && result.error
+                ? String(result.error)
+                : 'Registration options could not be loaded.';
+
+            addNotificationDiagnostic('JSONP_RESULT_FAILED', message);
+            cleanup();
+            reject(new Error(message));
+            return;
+          }
+
+          const employeeCount = Array.isArray(result.employees) ? result.employees.length : 0;
+          const vehicleCount = Array.isArray(result.vehicles) ? result.vehicles.length : 0;
+
+          addNotificationDiagnostic(
+            'JSONP_RESULT_OK',
+            'Employees: ' + employeeCount + '; vehicles: ' + vehicleCount
+          );
+
+          pushRegistrationOptions = result;
+          populatePushRegistrationOptions(result);
+          addNotificationDiagnostic('OPTIONS_POPULATED', 'Employee and vehicle dropdowns updated');
+
+          cleanup();
+          resolve(result);
+        };
+
+        script.onload = function() {
+          addNotificationDiagnostic(
+            'JSONP_SCRIPT_LOADED',
+            callbackReceived
+              ? 'External script load completed after callback'
+              : 'External script load completed; callback not yet seen'
+          );
+        };
+
+        script.onerror = function(event) {
+          addNotificationDiagnostic('JSONP_SCRIPT_ERROR', 'The external Apps Script resource failed to load');
+          cleanup();
+          reject(new Error('Could not load registration options from Apps Script.'));
+        };
+
+        timeoutId = setTimeout(function() {
+          addNotificationDiagnostic(
+            'JSONP_TIMEOUT',
+            'No Apps Script callback received within 15 seconds'
+          );
+          cleanup();
+          reject(new Error('Timed out loading employees and vehicles.'));
+        }, 15000);
+
+        script.src =
+          APPS_SCRIPT_URL +
+          '?api=pushRegistrationOptions' +
+          '&callback=' + encodeURIComponent(callbackName) +
+          '&_=' + Date.now();
+
+        addNotificationDiagnostic('JSONP_SCRIPT_URL_CREATED', script.src);
+        script.async = true;
+        document.head.appendChild(script);
+        addNotificationDiagnostic('JSONP_SCRIPT_INSERTED', 'Script element appended to document.head');
+      });
+    }
 
     function buildAppsScriptUrl(){const outer=new URL(location.href),inner=new URL(APPS_SCRIPT_URL);outer.searchParams.forEach((value,key)=>inner.searchParams.set(key,value));inner.searchParams.set('shell',outer.origin+outer.pathname);return inner.toString()}
     function loadWorkOrdersApp(){document.getElementById('appFrame').src=buildAppsScriptUrl()}
@@ -79,14 +243,60 @@
     async function registerServiceWorker(){if(!('serviceWorker'in navigator))return null;try{const registration=await navigator.serviceWorker.register('./service-worker.js');serviceWorkerRegistration=registration;return registration}catch(error){console.error('[PWA] Service worker registration failed:',error);return null}}
     function initialiseFirebase(){if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);firebaseMessaging=firebase.messaging()}
     async function enableNotifications(){const button=document.getElementById('enableNotificationsButton'),deviceType=document.getElementById('pushDeviceType').value,employeeName=document.getElementById('pushEmployeeName').value,vehicleRegistration=document.getElementById('pushVehicleRegistration').value;if(deviceType==='PERSONAL'&&!employeeName){setNotificationStatus('Select an employee before registering this device.');return}if(deviceType==='VEHICLE'&&!vehicleRegistration){setNotificationStatus('Select a vehicle before registering this device.');return}button.disabled=true;setNotificationStatus('Requesting notification permission...');try{const permission=await Notification.requestPermission();if(permission!=='granted'){setNotificationStatus('Notifications were not enabled. Browser permission: '+permission);button.disabled=false;updateNotificationBell(currentPushRegistrationStatus);return}if(!serviceWorkerRegistration)serviceWorkerRegistration=await registerServiceWorker();if(!serviceWorkerRegistration)throw new Error('Service worker registration is unavailable.');initialiseFirebase();setNotificationStatus('Creating the Firebase registration token...');const token=await firebaseMessaging.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration});if(!token)throw new Error('Firebase did not return a registration token.');setNotificationStatus('Saving this device registration...');const result=await sendPushBridgeRequest('PUSH_DEVICE_REGISTRATION_REQUEST',{registration:{deviceId:getPushDeviceId(),pushToken:token,deviceType,employeeName:deviceType==='PERSONAL'?employeeName:'',vehicleRegistration:deviceType==='VEHICLE'?vehicleRegistration:'',userAgent:navigator.userAgent||'',platform:navigator.userAgentData&&navigator.userAgentData.platform?navigator.userAgentData.platform:navigator.platform||'',notificationPermission:Notification.permission}});if(!result||result.success!==true)throw new Error('Apps Script did not confirm the registration.');const identity=result.deviceType==='PERSONAL'?result.employeeName:result.vehicleRegistration;currentPushRegistrationStatus={success:true,registered:true,enabled:true,deviceType:result.deviceType,employeeName:result.employeeName||'',vehicleRegistration:result.vehicleRegistration||'',registeredIdentity:identity,notificationPermission:Notification.permission,rowNumber:result.rowNumber,reason:'REGISTERED'};notificationSetupOpenedManually=false;updateNotificationBell(currentPushRegistrationStatus);button.textContent='Update Device Registration';button.disabled=false;document.getElementById('disableNotificationsButton').style.display='block';hideNotificationSetup()}catch(error){console.error('[FCM] Device registration failed:',error);setNotificationStatus('Device registration failed: '+(error&&error.message?error.message:String(error)));button.disabled=false;updateNotificationBell(currentPushRegistrationStatus)}}
-    async function prepareNotifications(){hideNotificationSetup();updateNotificationBell(null);if(!('Notification'in window)){setNotificationStatus('This browser does not support notifications.');document.getElementById('enableNotificationsButton').disabled=true;return}if(!('serviceWorker'in navigator)){setNotificationStatus('This browser does not support service workers.');document.getElementById('enableNotificationsButton').disabled=true;return}await registerServiceWorker();try{await loadPushRegistrationOptions();await loadPushRegistrationStatus()}catch(error){hideNotificationSetup();updateNotificationBell(null);setNotificationStatus('Notification setup could not be loaded: '+(error&&error.message?error.message:String(error)))}}
+    async function prepareNotifications() {
+      addNotificationDiagnostic('PREPARE_NOTIFICATIONS_STARTED', 'Notification startup entered');
+      hideNotificationSetup();
+      updateNotificationBell(null);
+
+      if (!('Notification' in window)) {
+        addNotificationDiagnostic('NOTIFICATION_API_UNAVAILABLE', 'window.Notification is missing');
+        setNotificationStatus('This browser does not support notifications.');
+        document.getElementById('enableNotificationsButton').disabled = true;
+        return;
+      }
+
+      addNotificationDiagnostic('NOTIFICATION_API_AVAILABLE', 'Permission: ' + Notification.permission);
+
+      if (!('serviceWorker' in navigator)) {
+        addNotificationDiagnostic('SERVICE_WORKER_API_UNAVAILABLE', 'navigator.serviceWorker is missing');
+        setNotificationStatus('This browser does not support service workers.');
+        document.getElementById('enableNotificationsButton').disabled = true;
+        return;
+      }
+
+      addNotificationDiagnostic('SERVICE_WORKER_API_AVAILABLE', 'Registering service worker');
+      const registration = await registerServiceWorker();
+      addNotificationDiagnostic(
+        registration ? 'SERVICE_WORKER_REGISTERED' : 'SERVICE_WORKER_REGISTRATION_FAILED',
+        registration && registration.scope ? registration.scope : ''
+      );
+
+      try {
+        await loadPushRegistrationOptions();
+        addNotificationDiagnostic('OPTIONS_LOAD_COMPLETE', 'Beginning registration-status lookup');
+        await loadPushRegistrationStatus();
+        addNotificationDiagnostic('REGISTRATION_STATUS_LOADED', 'Notification startup completed');
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error);
+        addNotificationDiagnostic('PREPARE_NOTIFICATIONS_FAILED', message);
+        showNotificationSetup();
+        updateNotificationBell(null);
+        setNotificationStatus('Notification setup could not be loaded: ' + message);
+      }
+    }
 
     document.getElementById('pushDeviceType').addEventListener('change',updatePushRegistrationFields);
     document.getElementById('enableNotificationsButton').addEventListener('click',enableNotifications);
     document.getElementById('disableNotificationsButton').addEventListener('click',disableNotificationsForThisBrowser);
     document.getElementById('notificationBackdrop').addEventListener('click',closeNotificationSettings);
+    document.getElementById('copyNotificationDiagnosticsButton').addEventListener('click', copyNotificationDiagnostics);
     updatePushRegistrationFields();
-    document.addEventListener('DOMContentLoaded',()=>{loadWorkOrdersApp();prepareNotifications()});
+    document.addEventListener('DOMContentLoaded', function() {
+      addNotificationDiagnostic('PAGE_READY', 'DOMContentLoaded fired');
+      renderNotificationDiagnostics();
+      loadWorkOrdersApp();
+      prepareNotifications();
+    });
   </script>
 </body>
 </html>
