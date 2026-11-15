@@ -466,8 +466,6 @@
       updateNotificationBell(status);
 
       if (Notification.permission === 'denied') {
-        showNotificationSetup();
-
         disableButton.style.display =
           status && status.registered === true && status.enabled === true
             ? 'block'
@@ -478,6 +476,10 @@
         setNotificationStatus(
           'Notifications are blocked in this browser. Use the browser site permissions to allow notifications, then reopen this panel.'
         );
+
+        if (!notificationSetupOpenedManually) {
+          hideNotificationSetup();
+        }
         return;
       }
 
@@ -495,29 +497,27 @@
           '\nBrowser permission: ' +
           String(Notification.permission || '')
         );
+      } else {
+        disableButton.style.display = 'none';
+        registerButton.textContent = 'Enable Notifications & Register Device';
 
-        if (!notificationSetupOpenedManually) {
-          hideNotificationSetup();
+        if (status && status.registered === true && status.enabled === false) {
+          setNotificationStatus(
+            'Notifications are disabled for this browser. Select the person or vehicle and register again to enable them.'
+          );
+        } else if (Notification.permission === 'granted') {
+          setNotificationStatus(
+            'Notification permission is already allowed. Select the person or vehicle to register this browser.'
+          );
+        } else {
+          setNotificationStatus(
+            'Register this browser to receive Work Order notifications.'
+          );
         }
-        return;
       }
 
-      disableButton.style.display = 'none';
-      registerButton.textContent = 'Enable Notifications & Register Device';
-      showNotificationSetup();
-
-      if (status && status.registered === true && status.enabled === false) {
-        setNotificationStatus(
-          'Notifications are disabled for this browser. Select the person or vehicle and register again to enable them.'
-        );
-      } else if (Notification.permission === 'granted') {
-        setNotificationStatus(
-          'Notification permission is already allowed. Select the person or vehicle to register this browser.'
-        );
-      } else {
-        setNotificationStatus(
-          'Register this browser to receive Work Order notifications.'
-        );
+      if (!notificationSetupOpenedManually) {
+        hideNotificationSetup();
       }
     }
 
@@ -814,7 +814,10 @@
     }
 
     async function prepareNotifications() {
-      showNotificationSetup();
+      // The notification panel is opt-in. Page load only checks state
+      // and updates the header icon. The worker opens the panel by
+      // explicitly clicking the notification icon.
+      hideNotificationSetup();
       updateNotificationBell(null);
 
       if (!('Notification' in window)) {
@@ -835,7 +838,7 @@
         await loadPushRegistrationOptions();
         await loadPushRegistrationStatus();
       } catch (error) {
-        showNotificationSetup();
+        hideNotificationSetup();
         updateNotificationBell(null);
 
         setNotificationStatus(
@@ -869,5 +872,4 @@
     });
   </script>
 </body>
-</html>
 </html>
