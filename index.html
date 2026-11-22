@@ -23,6 +23,11 @@
     #notificationDiagnostics summary{cursor:pointer;font-size:13px;font-weight:700;color:#31576b}
     #notificationDiagnosticsOutput{max-height:180px;overflow:auto;margin:8px 0 0;padding:8px;border-radius:6px;background:#f5f7f8;color:#263238;font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-word}
     #copyNotificationDiagnosticsButton{margin-top:8px!important;padding:8px!important;background:#546e7a!important;font-size:13px!important}
+    #locationBackdrop{position:fixed;inset:0;z-index:9998;display:none;background:rgba(14,78,108,.18)}
+    #locationSetup{position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;display:none;padding:14px;border-radius:10px;background:#fff;color:#222;box-shadow:0 2px 12px rgba(0,0,0,.28);font-family:Arial,sans-serif}
+    .locationSetupTitle{margin-bottom:8px;font-size:17px;font-weight:700}.locationSetupText{font-size:13px;line-height:1.4;color:#455a64}
+    #locationSetup button{width:100%;margin-top:10px;padding:12px;border:0;border-radius:8px;background:#1565c0;color:#fff;font-size:16px;font-weight:600}
+    #disableLocationButton{background:#546e7a!important}#locationStatus{margin-top:10px;font-size:13px;line-height:1.4;white-space:pre-line}
   </style>
 </head>
 <body>
@@ -52,6 +57,7 @@
       <button id="copyNotificationDiagnosticsButton" type="button">Copy diagnostics</button>
     </details>
   </div>
+  <div id="locationBackdrop" aria-hidden="true"></div><div id="locationSetup"><div class="locationSetupTitle">Location settings</div><div class="locationSetupText">Thing uses your current position only when you deliberately request it. Location is not continuously tracked and no travel trail is stored.</div><button id="enableLocationButton" type="button">Enable location</button><button id="disableLocationButton" type="button">Disable location</button><div id="locationStatus"></div></div>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js"></script>
   <script>
@@ -63,6 +69,7 @@
     const pushBridgeReadyPromise=new Promise(resolve=>{resolvePushBridgeReady=resolve});
 
     const notificationDiagnosticsLog = [];
+    const LOCATION_ENABLED_KEY='thingLocationEnabled';let locationBridgeWindow=null;let locationEnabled=localStorage.getItem(LOCATION_ENABLED_KEY)==='true';
 
     function addNotificationDiagnostic(stage, detail) {
       const now = new Date();
@@ -125,6 +132,14 @@
 
     window.addEventListener('message',event=>{const message=event.data&&typeof event.data==='object'?event.data:{};const type=String(message.type||'').trim();if(type==='PUSH_NOTIFICATION_SETTINGS_OPEN'&&pushBridgeWindow&&event.source===pushBridgeWindow){openNotificationSettings();return}if(type==='PUSH_REGISTRATION_BRIDGE_READY'){pushBridgeWindow=event.source;pushBridgeReady=true;if(resolvePushBridgeReady){resolvePushBridgeReady();resolvePushBridgeReady=null}updateNotificationBell(currentPushRegistrationStatus);return}if(!pushBridgeWindow||event.source!==pushBridgeWindow)return;if(!['PUSH_REGISTRATION_OPTIONS_RESPONSE','PUSH_DEVICE_REGISTRATION_RESPONSE','PUSH_REGISTRATION_STATUS_RESPONSE','PUSH_DEVICE_DISABLE_RESPONSE'].includes(type))return;const requestId=String(message.requestId||'').trim();const pending=pushBridgeRequests.get(requestId);if(!pending)return;clearTimeout(pending.timeoutId);pushBridgeRequests.delete(requestId);if(message.error){pending.reject(new Error(String(message.error)));return}pending.resolve(message.result)});
 
+    function getLocationPermissionState(){if(!('geolocation' in navigator))return Promise.resolve('unavailable');if(!navigator.permissions||typeof navigator.permissions.query!=='function')return Promise.resolve(locationEnabled?'prompt':'disabled');return navigator.permissions.query({name:'geolocation'}).then(r=>r.state).catch(()=>locationEnabled?'prompt':'disabled');}
+    async function sendLocationStatusToApp(lastError){if(!locationBridgeWindow)return;const permission=await getLocationPermissionState();let state='ATTENTION';if(!('geolocation' in navigator)||permission==='denied')state='BLOCKED';else if(locationEnabled&&lastError)state='ERROR';else if(locationEnabled)state='ENABLED';locationBridgeWindow.postMessage({type:'THING_LOCATION_STATUS_UPDATE',enabled:locationEnabled,state,permission,error:lastError||''},'*');}
+    function showLocationSetup(){locationBackdrop.style.display='block';locationSetup.style.display='block';renderLocationStatus();}function hideLocationSetup(){locationSetup.style.display='none';locationBackdrop.style.display='none';}
+    async function renderLocationStatus(message){const permission=await getLocationPermissionState();enableLocationButton.style.display=locationEnabled?'none':'block';disableLocationButton.style.display=locationEnabled?'block':'none';locationStatus.textContent=message||(permission==='denied'?'Location is blocked in browser site permissions.':locationEnabled?'Location is enabled for this browser.':'Location is disabled in Thing for this browser.');}
+    function requestOneCurrentPosition(){return new Promise((resolve,reject)=>{if(!('geolocation' in navigator)){reject(new Error('This browser does not support location.'));return;}navigator.geolocation.getCurrentPosition(resolve,e=>reject(new Error(({1:'Location permission was denied.',2:'Your current position could not be determined.',3:'The location request timed out.'})[e&&e.code]||'Your current position could not be obtained.')),{enableHighAccuracy:true,timeout:15000,maximumAge:15000});});}
+    async function enableThingLocation(){enableLocationButton.disabled=true;try{await requestOneCurrentPosition();locationEnabled=true;localStorage.setItem(LOCATION_ENABLED_KEY,'true');await renderLocationStatus('Location is enabled. Thing will request a fresh position only when you use a location feature.');await sendLocationStatusToApp('');}catch(e){locationEnabled=false;localStorage.removeItem(LOCATION_ENABLED_KEY);await renderLocationStatus(e.message);await sendLocationStatusToApp(e.message);}finally{enableLocationButton.disabled=false;}}
+    async function disableThingLocation(){locationEnabled=false;localStorage.removeItem(LOCATION_ENABLED_KEY);await renderLocationStatus('Location is disabled in Thing for this browser.');await sendLocationStatusToApp('');}
+    window.addEventListener('message',async event=>{const m=event.data&&typeof event.data==='object'?event.data:{};const type=String(m.type||'');if(type==='THING_LOCATION_BRIDGE_READY'){locationBridgeWindow=event.source;await sendLocationStatusToApp('');return;}if(!locationBridgeWindow||event.source!==locationBridgeWindow)return;if(type==='THING_LOCATION_SETTINGS_OPEN'){showLocationSetup();return;}if(type==='THING_LOCATION_POSITION_REQUEST'){const requestId=String(m.requestId||'');if(!locationEnabled){locationBridgeWindow.postMessage({type:'THING_LOCATION_POSITION_RESPONSE',requestId,error:'Location is disabled in Thing. Enable it first.'},'*');return;}try{const p=await requestOneCurrentPosition();await sendLocationStatusToApp('');locationBridgeWindow.postMessage({type:'THING_LOCATION_POSITION_RESPONSE',requestId,result:{latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:p.coords.accuracy,timestamp:p.timestamp}},'*');}catch(e){await sendLocationStatusToApp(e.message);locationBridgeWindow.postMessage({type:'THING_LOCATION_POSITION_RESPONSE',requestId,error:e.message},'*');}}});
     function updatePushRegistrationFields(){const type=document.getElementById('pushDeviceType').value;document.getElementById('pushEmployeeField').style.display=type==='PERSONAL'?'block':'none';document.getElementById('pushVehicleField').style.display=type==='VEHICLE'?'block':'none'}
     function populatePushRegistrationOptions(result){const employees=result&&Array.isArray(result.employees)?result.employees:[];const vehicles=result&&Array.isArray(result.vehicles)?result.vehicles:[];const es=document.getElementById('pushEmployeeName'),vs=document.getElementById('pushVehicleRegistration');es.innerHTML='<option value="">Select employee</option>';vs.innerHTML='<option value="">Select vehicle</option>';employees.forEach(employee=>{const name=String(employee.employeeName||'').trim();if(!name)return;const use=String(employee.useName||'').trim(),o=document.createElement('option');o.value=name;o.textContent=use&&use!==name?use+' - '+name:name;es.appendChild(o)});vehicles.forEach(vehicle=>{const reg=String(vehicle.registration||'').trim();if(!reg)return;const extra=[String(vehicle.description||'').trim(),String(vehicle.crew||'').trim()].filter(Boolean).join(' - '),o=document.createElement('option');o.value=reg;o.textContent=extra?reg+' - '+extra:reg;vs.appendChild(o)})}
 
@@ -292,7 +307,7 @@
     document.getElementById('enableNotificationsButton').addEventListener('click',enableNotifications);
     document.getElementById('disableNotificationsButton').addEventListener('click',disableNotificationsForThisBrowser);
     document.getElementById('notificationBackdrop').addEventListener('click',closeNotificationSettings);
-    document.getElementById('copyNotificationDiagnosticsButton').addEventListener('click', copyNotificationDiagnostics);
+    document.getElementById('copyNotificationDiagnosticsButton').addEventListener('click', copyNotificationDiagnostics);enableLocationButton.addEventListener('click',enableThingLocation);disableLocationButton.addEventListener('click',disableThingLocation);locationBackdrop.addEventListener('click',hideLocationSetup);
     updatePushRegistrationFields();
     document.addEventListener('DOMContentLoaded', function() {
       addNotificationDiagnostic('PAGE_READY', 'DOMContentLoaded fired');
